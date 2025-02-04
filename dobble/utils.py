@@ -115,7 +115,7 @@ class Game:
         embed.colour = Colour.dobble()
         embed.title = "Dobble!"
 
-        _player_string = "\n".join([f"{len(m[1]["cards"]) - 1} points - {m[0].mention}" for m in self.leaderboard])
+        _player_string = "\n".join([f"{len(m[1]['cards']) - 1} points - {m[0].mention}" for m in self.leaderboard])
         embed.description = f"👥 {len(self.players)}/{self.max_players} players\n{_player_string}"
         return embed
 
