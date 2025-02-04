@@ -149,7 +149,7 @@ class Game:
             self.cards_views.append(view)
             await game_player["interaction"].followup.send(view=view, ephemeral=True)
 
-        await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
+        await self.starting_interaction.edit_original_response(view=None)
 
     async def next_round(self, winner: discord.Member):
         winner_card = self.cards.pop(0)
@@ -160,8 +160,6 @@ class Game:
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
             self.cards_views.append(view)
             await game_player["interaction"].edit_original_response(view=view)
-
-        await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
 
 
 class CardsView(discord.ui.View):
