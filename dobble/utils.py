@@ -88,6 +88,7 @@ class Colour(discord.Colour):
 
 class GamePlayer(TypedDict):
     interaction: I
+    game_message: discord.WebhookMessage
     cards: list[list[str]]
 
 
@@ -147,7 +148,7 @@ class Game:
         for member, game_player in self.players.items():
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
             self.cards_views.append(view)
-            await game_player["interaction"].followup.send(view=view, ephemeral=True)
+            game_player["game_message"] = await game_player["interaction"].followup.send(view=view, ephemeral=True, wait=True)
 
         await self.starting_interaction.edit_original_response(view=None)
 
@@ -159,7 +160,7 @@ class Game:
         for member, game_player in self.players.items():
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
             self.cards_views.append(view)
-            await game_player["interaction"].edit_original_response(view=view)
+            await game_player["game_message"].edit(view=view)
 
 
 class CardsView(discord.ui.View):
