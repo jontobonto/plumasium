@@ -1,0 +1,8 @@
+{
+    "author" : ["jontobonto"],
+    "install_msg" : "Thanks for the installation.",
+    "name" : "Dobble",
+    "short" : "Play Dobble!",
+    "description" : "Let's have some fun, shall we?",
+    "tags" : ["Game", "Fun"]
+}
