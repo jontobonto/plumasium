@@ -122,7 +122,7 @@ class Game:
     @property
     def leaderboard(self):
         players = list(self.players.copy().items())
-        return sorted(players, key=lambda p: len(p[1]["cards"]))
+        return sorted(players, key=lambda p: len(p[1]["cards"]), reverse=True)
 
     @classmethod
     async def create(cls, interaction: I, max_players: int):
