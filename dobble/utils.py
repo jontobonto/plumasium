@@ -124,6 +124,8 @@ class Game:
     @classmethod
     async def create(cls, interaction: I, max_players: int):
         cards = _cards.copy()
+        for card in cards:
+            random.shuffle(card)
         random.shuffle(cards)
         game = cls(
             max_players=max_players,
@@ -141,7 +143,10 @@ class Game:
         for member, player in self.players.items():
             player_card = self.cards.pop(0)
             player["cards"].append(player_card)
-            await player["interaction"].followup.send(content=player["cards"][-1], ephemeral=True)
+
+        for member, player in self.players.items():
+            view = CardsView(self.cards[0], player["cards"][-1])
+            await player["interaction"].followup.send(view=view, ephemeral=True)
 
         await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
         
@@ -182,6 +187,38 @@ class StartGameView(discord.ui.View):
     async def start_game(self, interaction: I, button: discord.ui.Button):
         await interaction.response.defer()
         await self.game.start()
+
+
+class CardsView(discord.ui.View):
+    def __init__(self, card_1: list[str], card_2: list[str]):
+        super().__init__(timeout=None)
+
+        self.card_1 = card_1
+        self.card_2 = card_2
+
+    def _update(self):
+        same_icon = (list(set(self.card_1) & set(self.card_2)))[0]
+
+        for index, icon in enumerate(self.card_1):
+            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=1 if index > 3 else 0)
+            button.callback = self.correct_button if icon == same_icon else self.wrong_button
+            self.add_item(button)
+        
+        for _ in range(4):
+            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, emoji=icon, row=2)
+            button.callback = self.wrong_button
+            self.add_item(button)
+
+        for index, icon in enumerate(self.card_2):
+            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=4 if index > 3 else 3)
+            button.callback = self.correct_button if icon == same_icon else self.wrong_button
+            self.add_item(button)
+        
+    async def wrong_button(self, interaction: I):
+        await interaction.response.send_message("Wrong!", ephemeral=True)
+
+    async def correct_button(self, interaction: I):
+        await interaction.response.send_message("Correct!", ephemeral=True)
 
 class DobbleError(Exception):
     def __init__(self, message: Optional[str] = None, *args):
