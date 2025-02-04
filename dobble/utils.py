@@ -86,14 +86,31 @@ class Colour(discord.Colour):
 
 
 class Game:
-    def __init__(self, players: list[discord.Member], cards: list[list[str]], thread: discord.Thread):
+    def __init__(self, players: list[discord.Member], cards: list[list[str]], thread: discord.Thread, starting_interaction: I):
         self.players = players
         self.cards = cards
         self.thread = thread
+        self.starting_interaction = starting_interaction
 
     async def add_player(self, player: discord.Member):
+        if player in self.players:
+            raise IsAlreadyPlaying
         self.players.append(player)
         await self.thread.add_user(player)
+
+        if self.starting_interaction.response.is_done():
+            await self.starting_interaction.edit_original_response(embed=self.public_game_embed)
+
+    @property
+    def public_game_embed(self):
+        embed = discord.Embed()
+        embed.colour = Colour.dobble()
+        embed.title = "Dobble!"
+
+        embed.description = (
+            f"👥 {len(self.players)}/8 players"
+        )
+        return embed
 
     @classmethod
     async def start(cls, interaction: I):
@@ -101,12 +118,11 @@ class Game:
         random.shuffle(cards)
         thread = await interaction.channel.create_thread(name="Dobble")
         game = cls(
-            players=[
-                interaction.user,
-            ],
+            players=[],
             cards=cards,
             thread=thread,
         )
+        await game.add_player(interaction.user)
 
         join_game_view = JoinGameView(game)
         embed = discord.Embed(colour=Colour.dobble(), title="Dobble")
@@ -124,5 +140,12 @@ class JoinGameView(discord.ui.View):
         style=discord.ButtonStyle.grey,
     )
     async def join_game(self, interaction: I, button: discord.ui.Button):
-        await self.game.add_player(interaction.user)
-        await interaction.response.defer()
+        try:
+            await self.game.add_player(interaction.user)
+        except IsAlreadyPlaying as e:
+            await interaction.response.send_message(f"❌ You're already a player in this game.")
+        else:
+            await interaction.response.defer()
+
+class IsAlreadyPlaying(Exception):
+    pass
