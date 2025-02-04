@@ -91,7 +91,7 @@ class GamePlayer(TypedDict):
     cards: list[list[str]]
 
 class Game:
-    def __init__(self, max_players: int, players: dict[discord.Member, list[list[str]]], cards: list[list[str]], thread: discord.Thread, starting_interaction: I):
+    def __init__(self, max_players: int, players: dict[discord.Member, list[list[str]]], cards: list[list[str]], starting_interaction: I):
         self.max_players: int = max_players
         self.players: dict[discord.Member, GamePlayer] = players
         self.cards: list[list[str]] = cards
