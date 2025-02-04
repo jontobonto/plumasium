@@ -29,3 +29,4 @@ class Dobble(commands.Cog):
         interaction: I,
     ):
         "Start a Dobble game with up to 8 players, including yourself."
+        await utils.Game.start(interaction)
