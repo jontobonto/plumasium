@@ -108,7 +108,7 @@ class Game:
         embed.colour = Colour.dobble()
         embed.title = "Dobble!"
 
-        embed.description = f"👥 {len(self.players)}/{self.max_players} players"
+        embed.description = f"👥 {len(self.players)}/{self.max_players} players\n{'\n'.join([m.mention for m in self.players.keys()])}"
         return embed
 
     @classmethod
@@ -156,6 +156,9 @@ class Game:
         winner_card = self.cards.pop(0)
         self.players[winner]["cards"].append(winner_card)
 
+        if len(self.cards) == 0:
+            await self.starting_interaction.edit_original_response(content="over")
+
         self.cards_views: list[CardsView] = []
         for member, game_player in self.players.items():
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
@@ -168,11 +171,12 @@ class CardsView(discord.ui.View):
         super().__init__(timeout=None)
 
         self.game = game
+        self.player = player
 
         self.card_1 = card_1
         self.card_2 = card_2
 
-        self.over = False
+        self.over = 0
 
         self._update()
 
@@ -184,10 +188,14 @@ class CardsView(discord.ui.View):
             button.callback = self.correct_button if icon == same_icon else self.wrong_button
             self.add_item(button)
 
-        for _ in range(4):
-            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, row=2)
-            button.callback = self.wrong_button
-            self.add_item(button)
+        button = discord.ui.Button(label=f"{len(self.game.players[self.player]['cards'])-1} points", style=discord.ButtonStyle.blurple, disabled=True, row=2)
+        button.callback = self.wrong_button
+        self.add_item(button)
+
+        button = discord.ui.Button(label=f"{len(self.game.cards)} cards left", style=discord.ButtonStyle.blurple, disabled=True, row=2)
+        button.callback = self.wrong_button
+        self.add_item(button)
+    
 
         for index, icon in enumerate(self.card_2):
             button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=4 if index > 3 else 3)
@@ -201,12 +209,12 @@ class CardsView(discord.ui.View):
         self.game.players[interaction.user]["interaction"] = interaction
 
     async def correct_button(self, interaction: I):
-        if self.over:
-            return await interaction.response.send_message("Another player was faster than you...")
+        if self.over != 0:
+            return await interaction.response.send_message(f"<@{self.over}> was faster than you...")
         await interaction.response.defer()
         
         for view in self.game.cards_views:
-            view.over = True
+            view.over = interaction.user.id
 
         self.game.players[interaction.user]["interaction"] = interaction
 
@@ -249,7 +257,6 @@ class StartGameView(discord.ui.View):
     async def start_game(self, interaction: I, button: discord.ui.Button):
         await interaction.response.defer()
         await self.game.start()
-
 
 
 class DobbleError(Exception):
