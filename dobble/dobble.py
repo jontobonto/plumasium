@@ -27,6 +27,8 @@ class Dobble(commands.Cog):
     async def _dobble(
         self,
         interaction: I,
+        max_players: discord.app_commands.Range[int, 2, 8] = 8,
+        joinable: bool = True,
     ):
         "Start a Dobble game with up to 8 players, including yourself."
-        await utils.Game.start(interaction)
+        await utils.Game.create(interaction, max_players)
