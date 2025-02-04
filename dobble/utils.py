@@ -207,7 +207,7 @@ class CardsView(discord.ui.View):
             self.add_item(button)
         
         for _ in range(4):
-            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, emoji=icon, row=2)
+            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, row=2)
             button.callback = self.wrong_button
             self.add_item(button)
 
