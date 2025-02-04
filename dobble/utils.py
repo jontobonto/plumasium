@@ -121,6 +121,7 @@ class Game:
             players=[],
             cards=cards,
             thread=thread,
+            starting_interaction=interaction,
         )
         await game.add_player(interaction.user)
 
