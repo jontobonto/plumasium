@@ -142,7 +142,7 @@ class Game:
     async def _next_round(self):
         self.cards_views: list[CardsView] = []
         for member, game_player in self.players.items():
-            view = CardsView(self, self.cards[0], game_player["cards"][-1])
+            view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
             self.cards_views.append(view)
             await game_player["interaction"].followup.send(view=view, ephemeral=True)
 
