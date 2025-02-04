@@ -139,7 +139,11 @@ class Game:
             self.join_game_view._update()
             await self.starting_interaction.edit_original_response(embed=self.public_game_embed, view=self.join_game_view)
 
-    async def _next_round(self):
+    async def start(self):
+        for member, game_player in self.players.items():
+            player_card = self.cards.pop(0)
+            game_player["cards"].append(player_card)
+
         self.cards_views: list[CardsView] = []
         for member, game_player in self.players.items():
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
@@ -148,18 +152,17 @@ class Game:
 
         await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
 
-    async def start(self):
-        for member, game_player in self.players.items():
-            player_card = self.cards.pop(0)
-            game_player["cards"].append(player_card)
-
-        await self._next_round()
-
     async def next_round(self, winner: discord.Member):
         winner_card = self.cards.pop(0)
         self.players[winner]["cards"].append(winner_card)
 
-        await self._next_round()
+        self.cards_views: list[CardsView] = []
+        for member, game_player in self.players.items():
+            view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
+            self.cards_views.append(view)
+            await game_player["interaction"].edit_original_response(view=view, ephemeral=True)
+
+        await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
 
 
 class CardsView(discord.ui.View):
@@ -197,13 +200,17 @@ class CardsView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         await interaction.response.edit_message(view=self)
+        self.game.players[interaction.user]["interaction"] = interaction
 
     async def correct_button(self, interaction: I):
         if self.over:
             return await interaction.response.send_message("Another player was faster then you...")
+        await interaction.response.defer()
         
         for view in self.game.cards_views:
             view.over = True
+
+        self.game.players[interaction.user]["interaction"] = interaction
 
         await self.game.next_round(interaction.user)
 
