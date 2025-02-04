@@ -108,9 +108,14 @@ class Game:
         embed.colour = Colour.dobble()
         embed.title = "Dobble!"
 
-        _player_string = "\n".join([m.mention for m in self.players.keys()])
+        _player_string = "\n".join([f"{len(m[1]["cards"]) - 1} points - {m[0].mention}" for m in self.leaderboard])
         embed.description = f"👥 {len(self.players)}/{self.max_players} players\n{_player_string}"
         return embed
+
+    @property
+    def leaderboard(self):
+        players = list(self.players.copy().items())
+        return sorted(players, key=lambda p: len(p[1]["cards"]))
 
     @classmethod
     async def create(cls, interaction: I, max_players: int):
@@ -151,20 +156,24 @@ class Game:
             self.cards_views.append(view)
             game_player["game_message"] = await game_player["interaction"].followup.send(view=view, ephemeral=True, wait=True)
 
-        await self.starting_interaction.edit_original_response(view=None)
+        await self.starting_interaction.edit_original_response(embed=self.public_game_embed, view=None)
 
     async def next_round(self, winner: discord.Member):
         winner_card = self.cards.pop(0)
         self.players[winner]["cards"].append(winner_card)
 
         if len(self.cards) == 0:
-            await self.starting_interaction.edit_original_response(content="over")
+            for member, game_player in self.players.items():
+                await game_player["game_message"].edit(content=f"🥇 {self.leaderboard[0][0].mention} has won!", view=None)
 
-        self.cards_views: list[CardsView] = []
-        for member, game_player in self.players.items():
-            view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
-            self.cards_views.append(view)
-            await game_player["game_message"].edit(view=view)
+        else:
+            self.cards_views: list[CardsView] = []
+            for member, game_player in self.players.items():
+                view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
+                self.cards_views.append(view)
+                await game_player["game_message"].edit(view=view)
+
+        await self.starting_interaction.edit_original_response(embed=self.public_game_embed)
 
 
 class CardsView(discord.ui.View):
@@ -211,7 +220,7 @@ class CardsView(discord.ui.View):
 
     async def correct_button(self, interaction: I):
         if self.over != 0:
-            return await interaction.response.send_message(f"<@{self.over}> was faster than you...")
+            return await interaction.response.send_message(f"<@{self.over}> was faster than you...", ephemeral=True)
         await interaction.response.defer()
         
         for view in self.game.cards_views:
