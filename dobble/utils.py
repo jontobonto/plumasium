@@ -196,6 +196,8 @@ class CardsView(discord.ui.View):
         self.card_1 = card_1
         self.card_2 = card_2
 
+        self._update()
+
     def _update(self):
         same_icon = (list(set(self.card_1) & set(self.card_2)))[0]
 
