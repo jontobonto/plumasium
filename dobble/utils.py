@@ -160,7 +160,7 @@ class Game:
         for member, game_player in self.players.items():
             view = CardsView(self, member, self.cards[0], game_player["cards"][-1])
             self.cards_views.append(view)
-            await game_player["interaction"].edit_original_response(view=view, ephemeral=True)
+            await game_player["interaction"].edit_original_response(view=view)
 
         await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
 
