@@ -153,7 +153,7 @@ class StartGameView(discord.ui.View):
         self.game = game
 
     def _update(self):
-        if len(self.game.players) >= self.game.players:
+        if len(self.game.players) >= self.game.max_players:
             self.join_game.disabled = True
         else:
             self.join_game.disabled = False
