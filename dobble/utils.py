@@ -126,8 +126,7 @@ class Game:
         await game.add_player(interaction.user)
 
         join_game_view = JoinGameView(game)
-        embed = discord.Embed(colour=Colour.dobble(), title="Dobble")
-        await interaction.response.send_message(embed=embed, view=join_game_view)
+        await interaction.response.send_message(embed=game.public_game_embed, view=join_game_view)
 
 
 class JoinGameView(discord.ui.View):
@@ -144,7 +143,7 @@ class JoinGameView(discord.ui.View):
         try:
             await self.game.add_player(interaction.user)
         except IsAlreadyPlaying as e:
-            await interaction.response.send_message(f"❌ You're already a player in this game.")
+            await interaction.response.send_message(f"❌ You're already a player in this game.", ephemeral=True)
         else:
             await interaction.response.defer()
 
