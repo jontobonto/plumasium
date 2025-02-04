@@ -141,9 +141,9 @@ class Game:
         for member, player in self.players.items():
             player_card = self.cards.pop(0)
             player["cards"].append(player_card)
-            await player["interaction"].followup.send(content=player["cards"], ephemeral=True)
+            await player["interaction"].followup.send(content=player["cards"][-1], ephemeral=True)
 
-        await self.starting_interaction.edit_original_response(content=self.cards[0])
+        await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
         
 
 class StartGameView(discord.ui.View):
