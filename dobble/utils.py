@@ -107,6 +107,7 @@ class Game:
         self.players[player] = GamePlayer(interaction=join_interaction, cards=[])
 
         if self.starting_interaction.response.is_done():
+            self.join_game_view._update()
             await self.starting_interaction.edit_original_response(embed=self.public_game_embed, view=self.join_game_view)
 
     @property
@@ -133,12 +134,14 @@ class Game:
         await game.add_player(interaction.user, interaction)
 
         game.join_game_view = StartGameView(game)
+        game.join_game_view._update()
         await interaction.response.send_message(embed=game.public_game_embed, view=game.join_game_view)
 
     async def start(self):
         for member, player in self.players.items():
-            player["cards"] += self.cards.pop(0)
-            await player["interaction"].followup.send(content=player["cards"][-1], ephemeral=True)
+            player_card = self.cards.pop(0)
+            player["cards"].append(player_card)
+            await player["interaction"].followup.send(content=player["cards"], ephemeral=True)
 
         await self.starting_interaction.edit_original_response(content=self.cards[0])
         
