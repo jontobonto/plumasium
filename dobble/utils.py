@@ -90,6 +90,7 @@ class GamePlayer(TypedDict):
     interaction: I
     cards: list[list[str]]
 
+
 class Game:
     def __init__(self, max_players: int, players: dict[discord.Member, list[list[str]]], cards: list[list[str]], starting_interaction: I):
         self.max_players: int = max_players
@@ -98,17 +99,7 @@ class Game:
         self.starting_interaction: I = starting_interaction
 
         self.join_game_view: StartGameView = discord.utils.MISSING
-
-    async def add_player(self, player: discord.Member, join_interaction: I):
-        if player in self.players.keys():
-            raise IsAlreadyPlaying
-        if len(self.players) >= self.max_players:
-            raise GameFull
-        self.players[player] = GamePlayer(interaction=join_interaction, cards=[])
-
-        if self.starting_interaction.response.is_done():
-            self.join_game_view._update()
-            await self.starting_interaction.edit_original_response(embed=self.public_game_embed, view=self.join_game_view)
+        self.cards_views: list[CardsView] = discord.utils.MISSING
 
     @property
     def public_game_embed(self):
@@ -116,9 +107,7 @@ class Game:
         embed.colour = Colour.dobble()
         embed.title = "Dobble!"
 
-        embed.description = (
-            f"👥 {len(self.players)}/{self.max_players} players"
-        )
+        embed.description = f"👥 {len(self.players)}/{self.max_players} players"
         return embed
 
     @classmethod
@@ -139,17 +128,85 @@ class Game:
         game.join_game_view._update()
         await interaction.response.send_message(embed=game.public_game_embed, view=game.join_game_view)
 
-    async def start(self):
-        for member, player in self.players.items():
-            player_card = self.cards.pop(0)
-            player["cards"].append(player_card)
+    async def add_player(self, player: discord.Member, join_interaction: I):
+        if player in self.players.keys():
+            raise IsAlreadyPlaying
+        if len(self.players) >= self.max_players:
+            raise GameFull
+        self.players[player] = GamePlayer(interaction=join_interaction, cards=[])
 
-        for member, player in self.players.items():
-            view = CardsView(self.cards[0], player["cards"][-1])
-            await player["interaction"].followup.send(view=view, ephemeral=True)
+        if self.starting_interaction.response.is_done():
+            self.join_game_view._update()
+            await self.starting_interaction.edit_original_response(embed=self.public_game_embed, view=self.join_game_view)
+
+    async def _next_round(self):
+        self.cards_views: list[CardsView] = []
+        for member, game_player in self.players.items():
+            view = CardsView(self, self.cards[0], game_player["cards"][-1])
+            self.cards_views.append(view)
+            await game_player["interaction"].followup.send(view=view, ephemeral=True)
 
         await self.starting_interaction.edit_original_response(content=self.cards[0], embed=None, view=None)
+
+    async def start(self):
+        for member, game_player in self.players.items():
+            player_card = self.cards.pop(0)
+            game_player["cards"].append(player_card)
+
+        await self._next_round()
+
+    async def next_round(self, winner: discord.Member):
+        winner_card = self.cards.pop(0)
+        self.players[winner]["cards"].append(winner_card)
+
+        await self._next_round()
+
+
+class CardsView(discord.ui.View):
+    def __init__(self, game: Game, player: discord.Member, card_1: list[str], card_2: list[str]):
+        super().__init__(timeout=None)
+
+        self.game = game
+
+        self.card_1 = card_1
+        self.card_2 = card_2
+
+        self.over = False
+
+        self._update()
+
+    def _update(self):
+        same_icon = (list(set(self.card_1) & set(self.card_2)))[0]
+
+        for index, icon in enumerate(self.card_1):
+            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=1 if index > 3 else 0)
+            button.callback = self.correct_button if icon == same_icon else self.wrong_button
+            self.add_item(button)
+
+        for _ in range(4):
+            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, row=2)
+            button.callback = self.wrong_button
+            self.add_item(button)
+
+        for index, icon in enumerate(self.card_2):
+            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=4 if index > 3 else 3)
+            button.callback = self.correct_button if icon == same_icon else self.wrong_button
+            self.add_item(button)
+
+    async def wrong_button(self, interaction: I):
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+
+    async def correct_button(self, interaction: I):
+        if self.over:
+            return await interaction.response.send_message("Another player was faster then you...")
         
+        for view in self.game.cards_views:
+            view.over = True
+
+        await self.game.next_round(interaction.user)
+
 
 class StartGameView(discord.ui.View):
     def __init__(self, game: Game):
@@ -189,47 +246,17 @@ class StartGameView(discord.ui.View):
         await self.game.start()
 
 
-class CardsView(discord.ui.View):
-    def __init__(self, card_1: list[str], card_2: list[str]):
-        super().__init__(timeout=None)
-
-        self.card_1 = card_1
-        self.card_2 = card_2
-
-        self._update()
-
-    def _update(self):
-        same_icon = (list(set(self.card_1) & set(self.card_2)))[0]
-
-        for index, icon in enumerate(self.card_1):
-            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=1 if index > 3 else 0)
-            button.callback = self.correct_button if icon == same_icon else self.wrong_button
-            self.add_item(button)
-        
-        for _ in range(4):
-            button = discord.ui.Button(label="ㅤ", style=discord.ButtonStyle.grey, disabled=True, row=2)
-            button.callback = self.wrong_button
-            self.add_item(button)
-
-        for index, icon in enumerate(self.card_2):
-            button = discord.ui.Button(style=discord.ButtonStyle.grey, emoji=icon, row=4 if index > 3 else 3)
-            button.callback = self.correct_button if icon == same_icon else self.wrong_button
-            self.add_item(button)
-        
-    async def wrong_button(self, interaction: I):
-        await interaction.response.send_message("Wrong!", ephemeral=True)
-
-    async def correct_button(self, interaction: I):
-        await interaction.response.send_message("Correct!", ephemeral=True)
 
 class DobbleError(Exception):
     def __init__(self, message: Optional[str] = None, *args):
         self.message = message
         super().__init__(*args)
 
+
 class IsAlreadyPlaying(DobbleError):
     def __init__(self) -> None:
         super().__init__("❌ You're already a player in this game.")
+
 
 class GameFull(DobbleError):
     def __init__(self) -> None:
