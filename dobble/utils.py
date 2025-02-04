@@ -122,7 +122,6 @@ class Game:
             cards=cards,
             starting_interaction=interaction,
         )
-        await game.add_player(interaction.user, interaction)
 
         game.join_game_view = StartGameView(game)
         game.join_game_view._update()
@@ -204,7 +203,7 @@ class CardsView(discord.ui.View):
 
     async def correct_button(self, interaction: I):
         if self.over:
-            return await interaction.response.send_message("Another player was faster then you...")
+            return await interaction.response.send_message("Another player was faster than you...")
         await interaction.response.defer()
         
         for view in self.game.cards_views:
