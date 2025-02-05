@@ -1,0 +1,6 @@
+{
+    "author": ["Jonte"],
+    "name": "Embed Builder",
+    "description": "Tools to build embeds.",
+    "min_python_version": [3, 11, 0]
+}
