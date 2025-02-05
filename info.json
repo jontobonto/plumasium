@@ -1,8 +1,8 @@
 {
-    "author" : ["jontobonto"],
+    "author" : ["Jonte"],
     "install_msg" : "Thanks for the installation.",
-    "name" : "Dobble",
-    "short" : "Play Dobble!",
+    "name" : "Plumasium",
+    "short" : "Collection of different cogs for Redbot",
     "description" : "Let's have some fun, shall we?",
-    "tags" : ["Game", "Fun"]
+    "tags" : ["Game", "Fun", "Utility"]
 }
