@@ -1,0 +1,6 @@
+{
+    "author": ["Jonte"],
+    "name": "Sticky",
+    "description": "Stet eine Sticky Nachricht in einen Bestimmten Kanal.",
+    "min_python_version": [3, 11, 0]
+}
