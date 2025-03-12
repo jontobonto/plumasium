@@ -119,7 +119,7 @@ class Attix(commands.Cog):
             return
 
         questions.remove(found_question)
-        await self.config.guild(interaction.guild).question.set(questions)
+        await self.config.guild(interaction.guild).questions.set(questions)
 
         embed = discord.Embed()
         embed.color = discord.Color.green()
