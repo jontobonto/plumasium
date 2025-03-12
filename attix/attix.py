@@ -107,7 +107,7 @@ class Attix(commands.Cog):
         """Füge eine Frage hinzu."""
         questions: list[dict[str, str]] = await self.config.guild(interaction.guild).questions()
 
-        found_question = discord.utils.get(questions, id=id)
+        found_question = next((q for q in questions if q["id"] == id), None)
 
         if found_question is None:
             embed = discord.Embed()
