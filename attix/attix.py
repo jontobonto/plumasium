@@ -124,7 +124,7 @@ class Attix(commands.Cog):
         embed = discord.Embed()
         embed.color = discord.Color.green()
         embed.title = "Frage gelöscht"
-        embed.description = f"> Frage: {found_question["question"]}\n> Antwort: {found_question["answer"]}\n> Lösungsbuchstabe: {found_question["letter"]}"
+        embed.description = f"> Frage: {found_question['question']}\n> Antwort: {found_question['answer']}\n> Lösungsbuchstabe: {found_question['letter']}"
 
         await interaction.response.send_message(embed=embed)
         return
