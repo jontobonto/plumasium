@@ -89,7 +89,7 @@ class Attix(commands.Cog):
     @_attix_questions.command(name="add")
     async def _attix_questions_add(self, interaction: I, question: str, answer: str, letter: str):
         """Füge eine Frage hinzu."""
-        _data = {"id": uuid.uuid4(), "question": question, "answer": answer, "letter": letter}
+        _data = {"id": str(uuid.uuid4()), "question": question, "answer": answer, "letter": letter}
 
         async with self.config.guild(interaction.guild).questions() as questions:
             questions.append(_data)
