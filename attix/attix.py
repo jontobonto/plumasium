@@ -84,6 +84,10 @@ class Attix(commands.Cog):
         ),
     )
 
+    @_attix.command(name="post")
+    async def _attix_post(self, interaction: I, channel: discord.TextChannel):
+        """Veröffentliche ein Quiz mit den aktuellen Fragen."""
+
     _attix_questions = app_commands.Group(name="questions", description="Verwalte die aktuellen Fragen", parent=_attix)
 
     @_attix_questions.command(name="add")
@@ -128,3 +132,4 @@ class Attix(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
         return
+    
