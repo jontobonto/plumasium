@@ -27,9 +27,11 @@ class TwitchNotifications(commands.Cog):
         self.web_server: TCPSite = MISSING
 
     async def cog_load(self):
+        return
         await self.setup_web_server()
 
     async def cog_unload(self):
+        return
         await self.web_server.stop()
 
     twitch_notifications = app_commands.Group(
@@ -150,7 +152,7 @@ class TwitchNotifications(commands.Cog):
 
         runner = web.AppRunner(app)
         await runner.setup()
-        self.web_server = TCPSite(runner, port=8082)
+        self.web_server = TCPSite(runner, port=8080)
         await self.web_server.start()
 
 
