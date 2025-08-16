@@ -1,4 +1,4 @@
-from typing import Optional, TypedDict, cast, TYPE_CHECKING
+from typing import Optional, TypedDict, cast, TYPE_CHECKING, NotRequired
 import discord
 from redbot.core import commands
 from redbot.core.bot import Red
@@ -8,6 +8,32 @@ if TYPE_CHECKING:
     from .twitchnotifications import TwitchNotifications
 
 I = discord.Interaction["Red"]
+
+
+class PaginationData(TypedDict):
+    cursor: NotRequired[str]
+
+
+class StreamData(TypedDict):
+    id: str
+    user_id: str
+    user_login: str
+    user_name: str
+    game_id: str
+    game_name: str
+    type: str
+    title: str
+    tags: list[str]
+    viewer_count: int
+    started_at: str
+    language: str
+    thumbnail_url: str
+    is_mature: bool
+
+
+class GetStreamsResponseData(TypedDict):
+    data: list[StreamData]
+    pagination: PaginationData
 
 
 class TwitchUser(TypedDict):

@@ -14,6 +14,9 @@ from .utils import (
     TwitchUnauthorizedError,
     TwitchHTTPException,
     TwitchCredentialError,
+    StreamData,
+    PaginationData,
+    GetStreamsResponseData,
 )
 
 if TYPE_CHECKING:
@@ -91,6 +94,84 @@ class TwitchNotifications(commands.Cog):
 
                 else:
                     raise TwitchHTTPException(response.status, await response.text())
+
+    async def get_streams(
+        self,
+        *,
+        user_ids: tuple[str] | str = tuple(),
+        user_logins: tuple[str] | str = tuple(),
+        game_ids: tuple[str] | str = tuple(),
+        stream_type: Optional[Literal["all", "live"]] = None,
+        languages: tuple[str] | str = tuple(),
+        first: Optional[int] = None,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+    ) -> GetStreamsResponseData:
+        twitch_service = await self.bot.get_shared_api_tokens("twitch")
+        client_id = twitch_service.get("client_id")
+        access_token = twitch_service.get("access_token")
+
+        if not client_id:
+            raise TwitchCredentialError("Missing Twitch API client ID.")
+
+        if not access_token:
+            access_token = await self.get_new_twitch_access_token()
+
+        params = MultiDict()
+
+        if isinstance(user_ids, str):
+            user_ids = (user_ids,)
+        for user_id in user_ids:
+            params.add("user_id", user_id)
+
+        if isinstance(user_logins, str):
+            user_logins = (user_logins,)
+        for user_login in user_logins:
+            params.add("user_login", user_login)
+
+        if isinstance(game_ids, str):
+            game_ids = (game_ids,)
+        for game_id in game_ids:
+            params.add("game_id", game_id)
+
+        if stream_type:
+            params.add("type", stream_type)
+
+        if isinstance(languages, str):
+            languages = (languages,)
+        for language in languages:
+            params.add("language", language)
+
+        if first:
+            params.add("first", first)
+
+        if not before is None and not after is None:
+            raise ValueError("Cannot specify both 'before' and 'after' parameters.")
+
+        if before:
+            params.add("before", before)
+        if after:
+            params.add("after", after)
+
+        try:
+            data: GetStreamsResponseData = await self._twitch_api_request(  # type: ignore
+                client_id,
+                access_token,
+                "GET",
+                "/streams",
+                params=params,
+            )
+            return data
+        except TwitchUnauthorizedError as e:
+            access_token = await self.get_new_twitch_access_token()
+            data: GetStreamsResponseData = await self._twitch_api_request(  # type: ignore
+                client_id,
+                access_token,
+                "GET",
+                "/streams",
+                params=params,
+            )
+            return data
 
     async def get_twitch_users(self, *login_names: str) -> list["TwitchUser"]:
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
@@ -185,9 +266,11 @@ class TwitchNotifications(commands.Cog):
         channel = guild.get_channel(1405855630195163158)
         assert isinstance(channel, discord.TextChannel), "Channel not found"
 
-        await channel.send(
-            f"The stream is now online! https://www.twitch.tv/{data['event']['broadcaster_user_login']}"
-        )
+        data = await self.get_streams(user_ids=[data["event"]["broadcaster_user_id"]])  # type: ignore
+        data = data.get("data", [])
+        stream_data = data[0]
+
+        await channel.send(f"Stream is now online!\n{stream_data}")
 
         return web.Response(status=200)
 
