@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import TYPE_CHECKING, Literal, Optional, TypedDict, Annotated, cast
+from typing import TYPE_CHECKING, Literal, Optional
 import aiohttp
 import discord
 from discord.utils import MISSING
@@ -8,6 +8,13 @@ from aiohttp import web
 from aiohttp.web_runner import TCPSite
 from multidict import MultiDict
 from redbot.core import commands, app_commands, Config
+from .utils import (
+    TwitchUser,
+    TwitchUserTransformer,
+    TwitchUnauthorizedError,
+    TwitchHTTPException,
+    TwitchCredentialError,
+)
 
 if TYPE_CHECKING:
     from redbot.core.bot import Red
@@ -39,10 +46,12 @@ class TwitchNotifications(commands.Cog):
     )
 
     @twitch_notifications.command(name="add")
-    async def add_twitch_channel(self, interaction: I, channel: discord.TextChannel):
-        await interaction.response.send_message(
-            f"Added {channel.mention} to the Twitch channel list."
-        )
+    async def add_twitch_channel(
+        self,
+        interaction: I,
+        user: app_commands.Transform[TwitchUser, TwitchUserTransformer],
+    ):
+        await interaction.response.send_message(user.get("id"))
 
     async def get_new_twitch_access_token(self):
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
@@ -67,12 +76,9 @@ class TwitchNotifications(commands.Cog):
                 if response.status == 200:
                     data = await response.json()
                     await self.bot.set_shared_api_tokens(
-                        {
-                            "twitch": {
-                                "access_token": data.get("access_token"),
-                                "expires_in": data.get("expires_in"),
-                            }
-                        }
+                        "twitch",
+                        access_token=data.get("access_token"),
+                        expires_in=data.get("expires_in"),
                     )
                     return str(data.get("access_token"))
 
@@ -83,6 +89,9 @@ class TwitchNotifications(commands.Cog):
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
         client_id = twitch_service.get("client_id")
         access_token = twitch_service.get("access_token")
+
+        if not client_id:
+            raise TwitchCredentialError("Missing Twitch API client ID.")
 
         if not access_token:
             access_token = await self.get_new_twitch_access_token()
@@ -117,9 +126,7 @@ class TwitchNotifications(commands.Cog):
         access_token: str,
         method: Literal["GET", "POST", "DELETE", "PATCH"],
         endpoint: str,
-        params: Optional[dict] = None,
-        json: Optional[dict] = None,
-        data: Optional[dict] = None,
+        **kwargs,
     ) -> dict:
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -132,9 +139,7 @@ class TwitchNotifications(commands.Cog):
                 method,
                 url,
                 headers=headers,
-                params=params,
-                json=json,
-                data=data,
+                **kwargs,
             ) as response:
                 if response.status == 200:
                     return await response.json()
@@ -146,67 +151,11 @@ class TwitchNotifications(commands.Cog):
     async def setup_web_server(self):
         app = web.Application()
         # /cases/{guild_id}/{user_id}
-        app.router.add_route(
-            "POST", "/twitch/notifications", self.notifications_handler
-        )
+        # app.router.add_route(
+        #     "POST", "/twitch/notifications", self.notifications_handler
+        # )
 
         runner = web.AppRunner(app)
         await runner.setup()
         self.web_server = TCPSite(runner, port=8080)
         await self.web_server.start()
-
-
-class TwitchUser(TypedDict):
-    id: str
-    login: str
-    display_name: str
-    type: str
-    broadcaster_type: str
-    description: str
-    profile_image_url: str
-    offline_image_url: str
-    view_count: int
-    email: str
-    created_at: str
-
-
-class TwitchUserTransformer(discord.app_commands.Transformer):
-    @staticmethod
-    def get_login_name(value: str) -> str:
-        match = re.match(
-            r"^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)$", value
-        )
-        if match:
-            return match.group(1)
-
-        if re.fullmatch(r"[a-zA-Z0-9_]+", value):
-            return value
-        raise ValueError("Invalid Twitch login name.")
-
-    async def transform(self, interaction: I, value: str) -> discord.Message:
-        try:
-            login_name = self.get_login_name(value)
-        except ValueError as e:
-            raise commands.UserInputError(message=str(e))
-
-        cog = cast(
-            "Optional[TwitchNotifications]",
-            interaction.client.get_cog("TwitchNotifications"),
-        )
-
-        twitch_users = await cog.get_twitch_users(login_name)
-
-
-class TwitchUnauthorizedError(Exception):
-    pass
-
-
-class TwitchCredentialError(Exception):
-    pass
-
-
-class TwitchHTTPException(Exception):
-    def __init__(self, status: int, message: str):
-        self.status = status
-        self.message = message
-        super().__init__(message)
