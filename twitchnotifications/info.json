@@ -1,0 +1,12 @@
+{
+    "author": [
+        "Jonte"
+    ],
+    "name": "twitchnotifications",
+    "description": "Let's have some fun, shall we?",
+    "min_python_version": [
+        3,
+        11,
+        0
+    ]
+}

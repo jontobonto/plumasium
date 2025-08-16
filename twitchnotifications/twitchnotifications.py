@@ -31,27 +31,34 @@ class TwitchNotifications(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(cog_instance=self, identifier=722408471454023722)
 
+        self.config.register_guild(subscribed_channels={})
+
+        default_broadcaster = {"subscribed_guilds": []}
+        self.config.init_custom("broadcaster", 1)
+        self.config.register_custom("broadcaster", **default_broadcaster)
+
         self.web_server: TCPSite = MISSING
 
     async def cog_load(self):
-        return
         await self.setup_web_server()
 
     async def cog_unload(self):
-        return
-        await self.web_server.stop()
+        if not self.web_server is MISSING:
+            await self.web_server.stop()
 
     twitch_notifications = app_commands.Group(
         name="twitch-notifications", description="Manage Twitch notifications."
     )
 
     @twitch_notifications.command(name="add")
-    async def add_twitch_channel(
+    async def add_twitch_broadcaster(
         self,
         interaction: I,
-        user: app_commands.Transform[TwitchUser, TwitchUserTransformer],
+        broadcaster_user: app_commands.Transform[TwitchUser, TwitchUserTransformer],
     ):
-        await interaction.response.send_message(user.get("id"))
+        await interaction.response.send_message(broadcaster_user.get("id"))
+
+    async def subscribe_to_broadcaster(self, broadcaster_user: TwitchUser): ...
 
     async def get_new_twitch_access_token(self):
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
@@ -141,19 +148,61 @@ class TwitchNotifications(commands.Cog):
                 headers=headers,
                 **kwargs,
             ) as response:
-                if response.status == 200:
+                if response.ok:
                     return await response.json()
                 elif response.status == 401:
                     raise TwitchUnauthorizedError
                 else:
                     raise TwitchHTTPException(response.status, await response.text())
 
+    def is_webhook_callback_verification_request(self, request: web.Request) -> bool:
+        return (
+            request.headers.get("twitch-eventsub-message-type")
+            == "webhook_callback_verification"
+        )
+
+    async def respond_to_webhook_callback_verification(
+        self, request: web.Request
+    ) -> web.Response:
+        body = await request.json()
+        challenge = body.get("challenge")
+
+        log.info(f"Webhook callback verification challenge received: {body}")
+
+        headers = {"Content-Type": str(len(challenge))}
+        return web.Response(status=200, text=challenge, headers=headers)
+
+    async def stream_online_handler(self, request: web.Request) -> web.Response:
+        log.info("Stream online handler called.")
+        if self.is_webhook_callback_verification_request(request):
+            log.info("Webhook callback verification request received.")
+            return await self.respond_to_webhook_callback_verification(request)
+
+        data = await request.json()
+
+        guild = self.bot.get_guild(971069494162231356)
+        assert guild, "Guild not found"
+        channel = guild.get_channel(1405855630195163158)
+        assert isinstance(channel, discord.TextChannel), "Channel not found"
+
+        await channel.send(
+            f"The stream is now online! https://www.twitch.tv/{data['event']['broadcaster_user_login']}"
+        )
+
+        return web.Response(status=200)
+
+    async def test_handler(self, request: web.Request) -> web.Response:
+        log.info("Test handler called successfully.")
+        return web.Response(status=200, text="Test successful!")
+
     async def setup_web_server(self):
         app = web.Application()
-        # /cases/{guild_id}/{user_id}
-        # app.router.add_route(
-        #     "POST", "/twitch/notifications", self.notifications_handler
-        # )
+
+        app.router.add_route(
+            "POST", "/twitchnotifications/stream/online", self.stream_online_handler
+        )
+
+        app.router.add_route("POST", "/twitchnotifications/test", self.test_handler)
 
         runner = web.AppRunner(app)
         await runner.setup()
