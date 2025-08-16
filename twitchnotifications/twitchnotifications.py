@@ -261,9 +261,9 @@ class TwitchNotifications(commands.Cog):
 
         data = await request.json()
 
-        guild = self.bot.get_guild(971069494162231356)
+        guild = self.bot.get_guild(1379774648086036551)
         assert guild, "Guild not found"
-        channel = guild.get_channel(1405855630195163158)
+        channel = guild.get_channel(1405956090591707176)
         assert isinstance(channel, discord.TextChannel), "Channel not found"
 
         data = await self.get_streams(user_ids=[data["event"]["broadcaster_user_id"]])  # type: ignore
