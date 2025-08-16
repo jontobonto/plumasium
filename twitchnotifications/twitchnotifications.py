@@ -60,7 +60,7 @@ class TwitchNotifications(commands.Cog):
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(
+            async with session.post(
                 f"{TWITCH_AUTH_BASE_URL}/token",
                 params=params,
             ) as response:
