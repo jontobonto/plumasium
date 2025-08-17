@@ -113,7 +113,7 @@ class TwitchNotifications(commands.Cog):
         }
 
         await self.config.channel(channel).subscribed_broadcasters.set_raw(  # type: ignore
-            [b_id], value=notification_data
+            b_id, value=notification_data
         )
 
         await interaction.followup.send(f"Successfully subscribed to {broadcaster_user.get('display_name')}.")
