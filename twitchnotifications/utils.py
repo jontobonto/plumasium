@@ -147,8 +147,7 @@ def replace_variables_in_notification(
             if stream_data:
                 # Thumbnail URL with proper dimensions
                 thumbnail = stream_data.get("thumbnail_url", "")
-                if thumbnail:
-                    thumbnail = thumbnail.replace("{width}", "1920").replace("{height}", "1080")
+                thumbnail = thumbnail.replace("{width}", "1920").replace("{height}", "1080")
                 value = value.replace("$stream.thumbnail_url_hd", thumbnail)
 
             return value
