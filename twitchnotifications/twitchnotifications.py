@@ -1,42 +1,34 @@
-import logging
-import re
-import hmac
 import hashlib
+import hmac
+import logging
 import secrets
-from typing import TYPE_CHECKING, Optional, TypedDict, Annotated, cast
-import aiohttp
-import discord
-from discord.utils import MISSING
-from aiohttp import request, web
-from aiohttp.web_runner import TCPSite
-from multidict import MultiDict
-from redbot.core import commands, app_commands, Config
-import re
 from typing import TYPE_CHECKING, Literal, Optional
+
 import aiohttp
 import discord
-from discord.utils import MISSING
 from aiohttp import web
 from aiohttp.web_runner import TCPSite
+from discord.utils import MISSING
 from multidict import MultiDict
-from redbot.core import commands, app_commands, Config
+from redbot.core import Config, app_commands, commands
+
+from . import utils as _utils
 from .utils import (
-    UserData,
-    GetUsersResponseData,
-    TwitchUserTransformer,
-    TwitchUnauthorizedError,
-    TwitchHTTPException,
-    TwitchCredentialError,
-    StreamData,
-    PaginationData,
-    GetStreamsResponseData,
-    DiscordNotificationMessage,
     DiscordEmbed,
     DiscordEmbedAuthor,
-    DiscordEmbedField,
-    DiscordEmbedFooter,
     DiscordEmbedMedia,
-    DiscordEmbedProvider,
+    DiscordNotificationMessage,
+    GetStreamsResponseData,
+    GetUsersResponseData,
+    TwitchCredentialError,
+    TwitchHTTPException,
+    TwitchUnauthorizedError,
+    TwitchUserTransformer,
+    UserData,
+    is_webhook_callback_verification_request,
+    replace_variables_in_notification,
+    respond_to_webhook_callback_verification,
+    create_twitch_signature,
 )
 
 if TYPE_CHECKING:
@@ -61,6 +53,10 @@ class TwitchNotifications(commands.Cog):
         self.config.register_custom("broadcaster", **default_broadcaster)
 
         self.web_server: TCPSite = MISSING
+
+    @property
+    def utils(self):
+        return _utils
 
     async def cog_load(self):
         await self.setup_web_server()
@@ -104,15 +100,15 @@ class TwitchNotifications(commands.Cog):
         await self.config.custom("broadcaster", b_id).subscribed_channels.set(subscribed_channels)
 
         notification_data: DiscordNotificationMessage = {
-            "content": "$display_name ist jetzt LIVE!",
+            "content": "$user.display_name ist jetzt LIVE!",
             "embed": DiscordEmbed(
                 author=DiscordEmbedAuthor(
-                    name="$login_name ist jetzt live auf Twitch!",
-                    url="$stream_url",
-                    icon_url="$profile_image_url",
+                    name="$user.login ist jetzt live auf Twitch!",
+                    url="$stream.url",
+                    icon_url="$user.profile_image_url",
                 ),
-                title="$stream_title",
-                image=DiscordEmbedMedia(url="$thumbnail_url"),
+                title="$stream.title",
+                image=DiscordEmbedMedia(url="$stream.thumbnail_url_hd"),
             ),
         }
 
@@ -335,55 +331,13 @@ class TwitchNotifications(commands.Cog):
                 else:
                     raise TwitchHTTPException(response.status, await response.text())
 
-    def create_twitch_signature(self, request: web.Request, secret: str, raw_body: bytes) -> str:
-        """
-        Verify that a webhook request came from Twitch by validating the HMAC signature.
-
-        Args:
-            request: The aiohttp request object
-            secret: The secret key used when creating the subscription
-            raw_body: The raw request body as bytes
-
-        Returns:
-            True if the signature is valid, False otherwise
-
-        Implementation based on:
-        https://dev.twitch.tv/docs/eventsub/handling-webhook-events/#verifying-the-event-message
-        """
-        # Get required headers
-        message_id = request.headers.get("twitch-eventsub-message-id")
-        timestamp = request.headers.get("twitch-eventsub-message-timestamp")
-
-        if not message_id or not timestamp:
-            log.warning("Missing required Twitch EventSub headers for signature verification")
-            return ""
-
-        # Build the message for HMAC: message_id + timestamp + raw_body
-        message = message_id + timestamp + raw_body.decode("utf-8")
-
-        # Create HMAC-SHA256 signature
-        expected_signature = (
-            "sha256=" + hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
-        )
-
-        return expected_signature
-
-    def is_webhook_callback_verification_request(self, request: web.Request) -> bool:
-        return request.headers.get("twitch-eventsub-message-type") == "webhook_callback_verification"
-
-    def respond_to_webhook_callback_verification(self, data: dict) -> web.Response:
-        challenge = data.get("challenge", "")
-
-        headers = {"Content-Type": str(len(challenge))}
-        return web.Response(status=200, text=challenge, headers=headers)
-
     async def stream_online_handler(self, request: web.Request) -> web.Response:
         data = await request.json()
 
         log.info(f"Received Twitch EventSub notification: {data}")
 
         # Getting the relevant broadcaster ID
-        if self.is_webhook_callback_verification_request(request):
+        if is_webhook_callback_verification_request(request):
             broadcaster_id = data.get("subscription", {}).get("condition", {}).get("broadcaster_user_id")
         else:
             broadcaster_id = data.get("event", {}).get("broadcaster_user_id")
@@ -393,7 +347,7 @@ class TwitchNotifications(commands.Cog):
         broadcaster_secret = broadcaster_config.get("secret", "")
 
         # Creating the expected Twitch signature
-        expected_signature = self.create_twitch_signature(request, broadcaster_secret, await request.read())
+        expected_signature = create_twitch_signature(request, broadcaster_secret, await request.read())
         twitch_signature = request.headers.get("twitch-eventsub-message-signature", "")
 
         log.info(f"Expected Twitch signature: {expected_signature}")
@@ -407,12 +361,15 @@ class TwitchNotifications(commands.Cog):
 
         # Check whether the request is a webhook callback verification request
         # If it is, respond with the challenge
-        if self.is_webhook_callback_verification_request(request):
+        if is_webhook_callback_verification_request(request):
             log.info("Responding to webhook callback verification request with challenge")
-            return self.respond_to_webhook_callback_verification(data)
+            return respond_to_webhook_callback_verification(data)
 
-        stream_data = await self.get_streams(user_ids=broadcaster_id)
-        user_data = await self.get_twitch_users(broadcaster_id)
+        streams_data = (await self.get_streams(user_ids=broadcaster_id)).get("data", [])
+        users_data = (await self.get_twitch_users(data.get("event", {}).get("broadcaster_user_login"))).get("data", [])
+
+        stream_data = streams_data[0] if streams_data else None
+        user_data = users_data[0] if users_data else None
 
         subscribed_channels = broadcaster_config.get("subscribed_channels", [])
         log.info(
@@ -420,10 +377,42 @@ class TwitchNotifications(commands.Cog):
         )
         for _channel_id in subscribed_channels:
             channel = self.bot.get_channel(_channel_id)
-            if channel and isinstance(channel, discord.TextChannel):
-                await channel.send(
-                    f"Stream is now online!\nStream:\n{stream_data.get('data', [{},])}\n\nUser:\n{user_data.get('data', [{},])}"
-                )
+            if not channel:
+                log.warning(f"Channel with ID {_channel_id} not found. Skipping notification.")
+                continue
+            if isinstance(channel, discord.abc.PrivateChannel):
+                log.warning(f"Channel with ID {_channel_id} is a private channel. Skipping notification.")
+                continue
+
+            # Get the notification message template for this channel
+            try:
+                subscribed_channel_message_data: DiscordNotificationMessage = await self.config.channel(channel).subscribed_broadcasters.get_raw(broadcaster_id)  # type: ignore
+            except KeyError:
+                log.warning(f"No notification template found for broadcaster {broadcaster_id} in channel {_channel_id}")
+                continue
+
+            # Replace variables in the notification message
+            processed_message = replace_variables_in_notification(
+                subscribed_channel_message_data, stream_data, user_data
+            )
+
+            # Send the notification
+            try:
+                if isinstance(channel, discord.TextChannel):
+                    content = processed_message.get("content")
+                    embed_data = processed_message.get("embed")
+
+                    if embed_data:
+                        embed = discord.Embed.from_dict(embed_data)
+                    else:
+                        embed = MISSING
+
+                    await channel.send(content=content, embed=embed)
+
+                    log.info(f"Notification sent to channel {channel.name} ({_channel_id})")
+            except Exception as e:
+                log.error(f"Failed to send notification to channel {_channel_id}: {e}")
+
         log.info("Notifications sent successfully!")
 
         return web.Response(status=200)
