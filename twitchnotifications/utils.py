@@ -136,9 +136,13 @@ def replace_variables_in_notification(
                             value = value.replace(variable, str(val))
 
             # Special constructed variables
-            if stream_data:
+            if user_data:
                 # Stream URL: https://twitch.tv/username
+                value = value.replace("$stream.url", f"https://twitch.tv/{user_data.get('login', '')}")
+            elif stream_data:
                 value = value.replace("$stream.url", f"https://twitch.tv/{stream_data.get('user_login', '')}")
+            else:
+                value = value.replace("$stream.url", "https://twitch.tv/")
 
             if stream_data:
                 # Thumbnail URL with proper dimensions
