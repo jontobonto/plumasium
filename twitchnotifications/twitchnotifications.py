@@ -30,6 +30,13 @@ from .utils import (
     StreamData,
     PaginationData,
     GetStreamsResponseData,
+    DiscordNotificationMessage,
+    DiscordEmbed,
+    DiscordEmbedAuthor,
+    DiscordEmbedField,
+    DiscordEmbedFooter,
+    DiscordEmbedMedia,
+    DiscordEmbedProvider,
 )
 
 if TYPE_CHECKING:
@@ -47,9 +54,9 @@ class TwitchNotifications(commands.Cog):
         self.bot = bot
         self.config = Config.get_conf(cog_instance=self, identifier=722408471454023722)
 
-        self.config.register_guild(subscribed_channels={})
+        self.config.register_channel(subscribed_broadcasters={})
 
-        default_broadcaster = {"secret": "", "subscribed_guilds": []}
+        default_broadcaster = {"secret": "", "subscribed_channels": []}
         self.config.init_custom("broadcaster", 1)
         self.config.register_custom("broadcaster", **default_broadcaster)
 
@@ -73,27 +80,47 @@ class TwitchNotifications(commands.Cog):
         self,
         interaction: I,
         broadcaster_user: app_commands.Transform[UserData, TwitchUserTransformer],
+        channel: discord.TextChannel,
     ):
         assert interaction.guild
 
         await interaction.response.defer()
 
-        broadcasters = await self.config.custom("broadcaster").all()
-        if broadcaster_user.get("id") in broadcasters.keys():
-            subscribed_guilds = broadcasters[broadcaster_user.get("id")].get("subscribed_guilds", [])
-            if interaction.guild.id in subscribed_guilds:
-                await interaction.followup.send("Broadcaster is already subscribed.")
-                return
-            subscribed_guilds.append(interaction.guild.id)
-            await self.config.custom("broadcaster", broadcaster_user.get("id")).subscribed_guilds.set(subscribed_guilds)
-            return
+        b_id = broadcaster_user.get("id")
 
-        await self.subscribe_to_broadcaster(broadcaster_user)
-        await self.config.custom("broadcaster", broadcaster_user.get("id")).subscribed_guilds.set(
-            [interaction.guild.id]
+        broadcasters = await self.config.custom("broadcaster").all()
+        if b_id in broadcasters.keys():
+            subscribed_channels = broadcasters[b_id].get("subscribed_channels", [])
+            if channel.id in subscribed_channels:
+                await interaction.followup.send("This channel has already subscribed to receive notifications.")
+                return
+
+            subscribed_channels.append(channel.id)
+
+        else:
+            subscribed_channels = [channel.id]
+            await self.subscribe_to_broadcaster(broadcaster_user)
+
+        await self.config.custom("broadcaster", b_id).subscribed_channels.set(subscribed_channels)
+
+        notification_data: DiscordNotificationMessage = {
+            "content": "$display_name ist jetzt LIVE!",
+            "embed": DiscordEmbed(
+                author=DiscordEmbedAuthor(
+                    name="$login_name ist jetzt live auf Twitch!",
+                    url="$stream_url",
+                    icon_url="$profile_image_url",
+                ),
+                title="$stream_title",
+                image=DiscordEmbedMedia(url="$thumbnail_url"),
+            ),
+        }
+
+        await self.config.channel(channel).subscribed_broadcasters.set_raw(  # type: ignore
+            [b_id], value=notification_data
         )
 
-        await interaction.followup.send(f"Successfully subscribed to {broadcaster_user.get('name')}.")
+        await interaction.followup.send(f"Successfully subscribed to {broadcaster_user.get('display_name')}.")
 
     async def subscribe_to_broadcaster(self, broadcaster_user: UserData):
         broadcaster_subscription_secret = secrets.token_hex(32)
@@ -355,37 +382,49 @@ class TwitchNotifications(commands.Cog):
 
         log.info(f"Received Twitch EventSub notification: {data}")
 
+        # Getting the relevant broadcaster ID
         if self.is_webhook_callback_verification_request(request):
             broadcaster_id = data.get("subscription", {}).get("condition", {}).get("broadcaster_user_id")
         else:
             broadcaster_id = data.get("event", {}).get("broadcaster_user_id")
 
-        broadcaster_secret = await self.config.custom("broadcaster", broadcaster_id).secret()
+        # Getting the broadcaster secret
+        broadcaster_config = await self.config.custom("broadcaster", broadcaster_id).all()
+        broadcaster_secret = broadcaster_config.get("secret", "")
 
+        # Creating the expected Twitch signature
         expected_signature = self.create_twitch_signature(request, broadcaster_secret, await request.read())
         twitch_signature = request.headers.get("twitch-eventsub-message-signature", "")
 
         log.info(f"Expected Twitch signature: {expected_signature}")
         log.info(f"Received Twitch signature: {twitch_signature}")
 
+        # Compare the expected and received signatures
+        # If the signatures don't match, return a 403 Forbidden response
         if not hmac.compare_digest(expected_signature, twitch_signature):
             log.warning("Twitch signature verification failed")
             return web.Response(status=403)
 
+        # Check whether the request is a webhook callback verification request
+        # If it is, respond with the challenge
         if self.is_webhook_callback_verification_request(request):
             log.info("Responding to webhook callback verification request with challenge")
             return self.respond_to_webhook_callback_verification(data)
 
-        guild = self.bot.get_guild(1379774648086036551)
-        assert guild, "Guild not found"
-        channel = guild.get_channel(1405956090591707176)
-        assert isinstance(channel, discord.TextChannel), "Channel not found"
+        stream_data = await self.get_streams(user_ids=broadcaster_id)
+        user_data = await self.get_twitch_users(broadcaster_id)
 
-        data = await self.get_streams(user_ids=[data["event"]["broadcaster_user_id"]])  # type: ignore
-        data = data.get("data", [])
-        stream_data = data[0]
-
-        await channel.send(f"Stream is now online!\n{stream_data}")
+        subscribed_channels = broadcaster_config.get("subscribed_channels", [])
+        log.info(
+            f"Subscribed channels for broadcaster {broadcaster_id}: {subscribed_channels}\nSending notifications..."
+        )
+        for _channel_id in subscribed_channels:
+            channel = self.bot.get_channel(_channel_id)
+            if channel and isinstance(channel, discord.TextChannel):
+                await channel.send(
+                    f"Stream is now online!\nStream:\n{stream_data.get('data', [{}])[0]}\n\nUser:\n{user_data.get('data', [{}])[0]}"
+                )
+        log.info("Notifications sent successfully!")
 
         return web.Response(status=200)
 

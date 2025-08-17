@@ -3,11 +3,24 @@ import discord
 from redbot.core import commands
 from redbot.core.bot import Red
 import re
+from discord.types.embed import (
+    Embed as DiscordEmbed,
+    EmbedAuthor as DiscordEmbedAuthor,
+    EmbedField as DiscordEmbedField,
+    EmbedFooter as DiscordEmbedFooter,
+    EmbedMedia as DiscordEmbedMedia,
+    EmbedProvider as DiscordEmbedProvider,
+)
 
 if TYPE_CHECKING:
     from .twitchnotifications import TwitchNotifications
 
 I = discord.Interaction["Red"]
+
+
+class DiscordNotificationMessage(TypedDict, total=False):
+    content: str
+    embed: DiscordEmbed
 
 
 class PaginationData(TypedDict):
