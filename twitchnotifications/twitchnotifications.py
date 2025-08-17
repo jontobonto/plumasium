@@ -82,7 +82,7 @@ class TwitchNotifications(commands.Cog):
         if broadcaster_user.get("id") in broadcasters.keys():
             subscribed_guilds = broadcasters[broadcaster_user.get("id")].get("subscribed_guilds", [])
             if interaction.guild.id in subscribed_guilds:
-                await interaction.response.send_message("Broadcaster is already subscribed.")
+                await interaction.followup.send("Broadcaster is already subscribed.")
                 return
             subscribed_guilds.append(interaction.guild.id)
             await self.config.custom("broadcaster", broadcaster_user.get("id")).subscribed_guilds.set(subscribed_guilds)
@@ -93,7 +93,7 @@ class TwitchNotifications(commands.Cog):
             [interaction.guild.id]
         )
 
-        await interaction.response.send_message(f"Successfully subscribed to {broadcaster_user.get('name')}.")
+        await interaction.followup.send(f"Successfully subscribed to {broadcaster_user.get('name')}.")
 
     async def subscribe_to_broadcaster(self, broadcaster_user: UserData):
         broadcaster_subscription_secret = secrets.token_hex(32)
