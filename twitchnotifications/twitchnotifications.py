@@ -422,7 +422,7 @@ class TwitchNotifications(commands.Cog):
             channel = self.bot.get_channel(_channel_id)
             if channel and isinstance(channel, discord.TextChannel):
                 await channel.send(
-                    f"Stream is now online!\nStream:\n{stream_data.get('data', [{},])[0]}\n\nUser:\n{user_data.get('data', [{},])[0]}"
+                    f"Stream is now online!\nStream:\n{stream_data.get('data', [{},])}\n\nUser:\n{user_data.get('data', [{},])}"
                 )
         log.info("Notifications sent successfully!")
 
