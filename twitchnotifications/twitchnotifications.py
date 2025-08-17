@@ -104,17 +104,14 @@ class TwitchNotifications(commands.Cog):
             },
         }
 
-        response = await self._twitch_api_request(
+        response_data = await self._twitch_api_request(
             client_id,
             access_token,
             "POST",
             "/eventsub/subscriptions",
             json=data,
         )
-        if response.ok:
-            log.info(f"Successfully subscribed: {await response.json()}")
-        else:
-            log.error(f"Failed to subscribe: {await response.json()}")
+        log.info(f"Successfully subscribed: {response_data}")
 
     async def get_new_twitch_access_token(self):
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
@@ -207,25 +204,23 @@ class TwitchNotifications(commands.Cog):
             params.add("after", after)
 
         try:
-            response = await self._twitch_api_request(
+            data: GetStreamsResponseData = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/streams",
                 params=params,
             )
-            data: GetStreamsResponseData = await response.json()
             return data
         except TwitchUnauthorizedError as e:
             access_token = await self.get_new_twitch_access_token()
-            response = await self._twitch_api_request(
+            data: GetStreamsResponseData = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/streams",
                 params=params,
             )
-            data: GetStreamsResponseData = await response.json()
             return data
 
     async def get_twitch_users(self, *login_names: str) -> GetUsersResponseData:
@@ -244,25 +239,23 @@ class TwitchNotifications(commands.Cog):
             params.add("login", name)
 
         try:
-            response = await self._twitch_api_request(
+            data: GetUsersResponseData = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/users",
                 params=params,
             )
-            data: GetUsersResponseData = await response.json()
             return data
         except TwitchUnauthorizedError as e:
             access_token = await self.get_new_twitch_access_token()
-            response = await self._twitch_api_request(
+            data: GetUsersResponseData = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/users",
                 params=params,
             )
-            data: GetUsersResponseData = await response.json()
             return data
 
     async def _twitch_api_request(
@@ -292,7 +285,7 @@ class TwitchNotifications(commands.Cog):
                 **kwargs,
             ) as response:
                 if response.ok:
-                    return response
+                    return await response.json()
                 elif response.status == 401:
                     raise TwitchUnauthorizedError
                 else:
