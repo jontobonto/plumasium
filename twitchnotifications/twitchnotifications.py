@@ -394,9 +394,17 @@ class TwitchNotifications(commands.Cog):
                 log.warning(f"No notification template found for broadcaster {broadcaster_id} in channel {_channel_id}")
                 continue
 
+            log.info(
+                f"Notification template found for broadcaster {broadcaster_id} in channel {_channel_id}: {subscribed_channel_message_data}"
+            )
+
             # Replace variables in the notification message
             processed_message = replace_variables_in_notification(
                 subscribed_channel_message_data, stream_data, user_data
+            )
+
+            log.info(
+                f"Processed notification message for broadcaster {broadcaster_id} in channel {_channel_id}: {processed_message}"
             )
 
             # Send the notification
