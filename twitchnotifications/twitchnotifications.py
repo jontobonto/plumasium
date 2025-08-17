@@ -63,7 +63,9 @@ class TwitchNotifications(commands.Cog):
             await self.web_server.stop()
 
     twitch_notifications = app_commands.Group(
-        name="twitch-notifications", description="Manage Twitch notifications."
+        name="twitch-notifications",
+        description="Manage Twitch notifications.",
+        guild_only=True,
     )
 
     @twitch_notifications.command(name="add")
@@ -72,13 +74,30 @@ class TwitchNotifications(commands.Cog):
         interaction: I,
         broadcaster_user: app_commands.Transform[UserData, TwitchUserTransformer],
     ):
-        await interaction.response.send_message(broadcaster_user.get("id"))
+        assert interaction.guild
+
+        await interaction.response.defer()
+
+        broadcasters = await self.config.custom("broadcaster").all()
+        if broadcaster_user.get("id") in broadcasters.keys():
+            subscribed_guilds = broadcasters[broadcaster_user.get("id")].get("subscribed_guilds", [])
+            if interaction.guild.id in subscribed_guilds:
+                await interaction.response.send_message("Broadcaster is already subscribed.")
+                return
+            subscribed_guilds.append(interaction.guild.id)
+            await self.config.custom("broadcaster", broadcaster_user.get("id")).subscribed_guilds.set(subscribed_guilds)
+            return
+
+        await self.subscribe_to_broadcaster(broadcaster_user)
+        await self.config.custom("broadcaster", broadcaster_user.get("id")).subscribed_guilds.set(
+            [interaction.guild.id]
+        )
+
+        await interaction.response.send_message(f"Successfully subscribed to {broadcaster_user.get('name')}.")
 
     async def subscribe_to_broadcaster(self, broadcaster_user: UserData):
         broadcaster_subscription_secret = secrets.token_hex(32)
-        await self.config.custom("broadcaster", broadcaster_user.get("id")).secret.set(
-            broadcaster_subscription_secret
-        )
+        await self.config.custom("broadcaster", broadcaster_user.get("id")).secret.set(broadcaster_subscription_secret)
 
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
         client_id = twitch_service.get("client_id")
@@ -273,9 +292,7 @@ class TwitchNotifications(commands.Cog):
 
         url = f"{TWITCH_API_BASE_URL}{endpoint}"
 
-        log.info(
-            f"Making Twitch API request: {method} {url} with headers {headers} and params {kwargs}"
-        )
+        log.info(f"Making Twitch API request: {method} {url} with headers {headers} and params {kwargs}")
 
         async with aiohttp.ClientSession() as session:
             async with session.request(
@@ -291,9 +308,7 @@ class TwitchNotifications(commands.Cog):
                 else:
                     raise TwitchHTTPException(response.status, await response.text())
 
-    def create_twitch_signature(
-        self, request: web.Request, secret: str, raw_body: bytes
-    ) -> str:
+    def create_twitch_signature(self, request: web.Request, secret: str, raw_body: bytes) -> str:
         """
         Verify that a webhook request came from Twitch by validating the HMAC signature.
 
@@ -313,9 +328,7 @@ class TwitchNotifications(commands.Cog):
         timestamp = request.headers.get("twitch-eventsub-message-timestamp")
 
         if not message_id or not timestamp:
-            log.warning(
-                "Missing required Twitch EventSub headers for signature verification"
-            )
+            log.warning("Missing required Twitch EventSub headers for signature verification")
             return ""
 
         # Build the message for HMAC: message_id + timestamp + raw_body
@@ -323,19 +336,13 @@ class TwitchNotifications(commands.Cog):
 
         # Create HMAC-SHA256 signature
         expected_signature = (
-            "sha256="
-            + hmac.new(
-                secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256
-            ).hexdigest()
+            "sha256=" + hmac.new(secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256).hexdigest()
         )
 
         return expected_signature
 
     def is_webhook_callback_verification_request(self, request: web.Request) -> bool:
-        return (
-            request.headers.get("twitch-eventsub-message-type")
-            == "webhook_callback_verification"
-        )
+        return request.headers.get("twitch-eventsub-message-type") == "webhook_callback_verification"
 
     def respond_to_webhook_callback_verification(self, data: dict) -> web.Response:
         challenge = data.get("challenge", "")
@@ -349,21 +356,13 @@ class TwitchNotifications(commands.Cog):
         log.info(f"Received Twitch EventSub notification: {data}")
 
         if self.is_webhook_callback_verification_request(request):
-            broadcaster_id = (
-                data.get("subscription", {})
-                .get("condition", {})
-                .get("broadcaster_user_id")
-            )
+            broadcaster_id = data.get("subscription", {}).get("condition", {}).get("broadcaster_user_id")
         else:
             broadcaster_id = data.get("event", {}).get("broadcaster_user_id")
 
-        broadcaster_secret = await self.config.custom(
-            "broadcaster", broadcaster_id
-        ).secret()
+        broadcaster_secret = await self.config.custom("broadcaster", broadcaster_id).secret()
 
-        expected_signature = self.create_twitch_signature(
-            request, broadcaster_secret, await request.read()
-        )
+        expected_signature = self.create_twitch_signature(request, broadcaster_secret, await request.read())
         twitch_signature = request.headers.get("twitch-eventsub-message-signature", "")
 
         log.info(f"Expected Twitch signature: {expected_signature}")
@@ -374,9 +373,7 @@ class TwitchNotifications(commands.Cog):
             return web.Response(status=403)
 
         if self.is_webhook_callback_verification_request(request):
-            log.info(
-                "Responding to webhook callback verification request with challenge"
-            )
+            log.info("Responding to webhook callback verification request with challenge")
             return self.respond_to_webhook_callback_verification(data)
 
         guild = self.bot.get_guild(1379774648086036551)
@@ -399,9 +396,7 @@ class TwitchNotifications(commands.Cog):
     async def setup_web_server(self):
         app = web.Application()
 
-        app.router.add_route(
-            "POST", "/twitchnotifications/stream/online", self.stream_online_handler
-        )
+        app.router.add_route("POST", "/twitchnotifications/stream/online", self.stream_online_handler)
 
         app.router.add_route("POST", "/twitchnotifications/test", self.test_handler)
 
