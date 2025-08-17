@@ -57,9 +57,7 @@ class GetUsersResponseData(TypedDict):
 class TwitchUserTransformer(discord.app_commands.Transformer):
     @staticmethod
     def get_login_name(value: str) -> str:
-        match = re.match(
-            r"^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)$", value
-        )
+        match = re.match(r"^(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)$", value)
         if match:
             return match.group(1)
 
@@ -85,7 +83,8 @@ class TwitchUserTransformer(discord.app_commands.Transformer):
         if not twitch_users:
             raise commands.UserInputError("No Twitch users found.")
 
-        return twitch_users.get("data", [])
+        user_data = twitch_users.get("data", [])
+        return user_data[0]
 
 
 class TwitchUnauthorizedError(Exception):
