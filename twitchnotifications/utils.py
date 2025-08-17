@@ -36,7 +36,7 @@ class GetStreamsResponseData(TypedDict):
     pagination: PaginationData
 
 
-class TwitchUser(TypedDict):
+class UserData(TypedDict):
     id: str
     login: str
     display_name: str
@@ -48,6 +48,10 @@ class TwitchUser(TypedDict):
     view_count: int
     email: str
     created_at: str
+
+
+class GetUsersResponseData(TypedDict):
+    data: list[UserData]
 
 
 class TwitchUserTransformer(discord.app_commands.Transformer):
@@ -81,7 +85,7 @@ class TwitchUserTransformer(discord.app_commands.Transformer):
         if not twitch_users:
             raise commands.UserInputError("No Twitch users found.")
 
-        return twitch_users[0]
+        return twitch_users.get("data", [])
 
 
 class TwitchUnauthorizedError(Exception):

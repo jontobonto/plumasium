@@ -1,5 +1,17 @@
 import logging
 import re
+import hmac
+import hashlib
+import secrets
+from typing import TYPE_CHECKING, Optional, TypedDict, Annotated, cast
+import aiohttp
+import discord
+from discord.utils import MISSING
+from aiohttp import request, web
+from aiohttp.web_runner import TCPSite
+from multidict import MultiDict
+from redbot.core import commands, app_commands, Config
+import re
 from typing import TYPE_CHECKING, Literal, Optional
 import aiohttp
 import discord
@@ -9,7 +21,8 @@ from aiohttp.web_runner import TCPSite
 from multidict import MultiDict
 from redbot.core import commands, app_commands, Config
 from .utils import (
-    TwitchUser,
+    UserData,
+    GetUsersResponseData,
     TwitchUserTransformer,
     TwitchUnauthorizedError,
     TwitchHTTPException,
@@ -36,7 +49,7 @@ class TwitchNotifications(commands.Cog):
 
         self.config.register_guild(subscribed_channels={})
 
-        default_broadcaster = {"subscribed_guilds": []}
+        default_broadcaster = {"secret": "", "subscribed_guilds": []}
         self.config.init_custom("broadcaster", 1)
         self.config.register_custom("broadcaster", **default_broadcaster)
 
@@ -57,11 +70,51 @@ class TwitchNotifications(commands.Cog):
     async def add_twitch_broadcaster(
         self,
         interaction: I,
-        broadcaster_user: app_commands.Transform[TwitchUser, TwitchUserTransformer],
+        broadcaster_user: app_commands.Transform[UserData, TwitchUserTransformer],
     ):
         await interaction.response.send_message(broadcaster_user.get("id"))
 
-    async def subscribe_to_broadcaster(self, broadcaster_user: TwitchUser): ...
+    async def subscribe_to_broadcaster(self, broadcaster_user: UserData):
+        broadcaster_subscription_secret = secrets.token_hex(32)
+        await self.config.custom("broadcaster", broadcaster_user.get("id")).secret.set(
+            broadcaster_subscription_secret
+        )
+
+        twitch_service = await self.bot.get_shared_api_tokens("twitch")
+        client_id = twitch_service.get("client_id")
+        access_token = twitch_service.get("access_token")
+        default_callback = twitch_service.get("callback_url")
+
+        if not client_id:
+            raise TwitchCredentialError("Missing Twitch API client ID.")
+
+        if not access_token:
+            access_token = await self.get_new_twitch_access_token()
+
+        callback_url = f"{default_callback}/twitchnotifications/stream/online"
+
+        data = {
+            "type": "stream.online",
+            "version": "1",
+            "condition": {"broadcaster_user_id": broadcaster_user.get("id")},
+            "transport": {
+                "method": "webhook",
+                "callback": callback_url,
+                "secret": broadcaster_subscription_secret,
+            },
+        }
+
+        response = await self._twitch_api_request(
+            client_id,
+            access_token,
+            "POST",
+            "/eventsub/subscriptions",
+            json=data,
+        )
+        if response.ok:
+            log.info(f"Successfully subscribed: {await response.json()}")
+        else:
+            log.error(f"Failed to subscribe: {await response.json()}")
 
     async def get_new_twitch_access_token(self):
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
@@ -154,26 +207,28 @@ class TwitchNotifications(commands.Cog):
             params.add("after", after)
 
         try:
-            data: GetStreamsResponseData = await self._twitch_api_request(  # type: ignore
+            response = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/streams",
                 params=params,
             )
+            data: GetStreamsResponseData = await response.json()
             return data
         except TwitchUnauthorizedError as e:
             access_token = await self.get_new_twitch_access_token()
-            data: GetStreamsResponseData = await self._twitch_api_request(  # type: ignore
+            response = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/streams",
                 params=params,
             )
+            data: GetStreamsResponseData = await response.json()
             return data
 
-    async def get_twitch_users(self, *login_names: str) -> list["TwitchUser"]:
+    async def get_twitch_users(self, *login_names: str) -> GetUsersResponseData:
         twitch_service = await self.bot.get_shared_api_tokens("twitch")
         client_id = twitch_service.get("client_id")
         access_token = twitch_service.get("access_token")
@@ -189,24 +244,26 @@ class TwitchNotifications(commands.Cog):
             params.add("login", name)
 
         try:
-            data = await self._twitch_api_request(
+            response = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/users",
                 params=params,
             )
-            return data.get("data", [])
+            data: GetUsersResponseData = await response.json()
+            return data
         except TwitchUnauthorizedError as e:
             access_token = await self.get_new_twitch_access_token()
-            data = await self._twitch_api_request(
+            response = await self._twitch_api_request(
                 client_id,
                 access_token,
                 "GET",
                 "/users",
                 params=params,
             )
-            return data.get("data", [])
+            data: GetUsersResponseData = await response.json()
+            return data
 
     async def _twitch_api_request(
         self,
@@ -215,13 +272,18 @@ class TwitchNotifications(commands.Cog):
         method: Literal["GET", "POST", "DELETE", "PATCH"],
         endpoint: str,
         **kwargs,
-    ) -> dict:
+    ):
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Client-Id": client_id,
         }
 
         url = f"{TWITCH_API_BASE_URL}{endpoint}"
+
+        log.info(
+            f"Making Twitch API request: {method} {url} with headers {headers} and params {kwargs}"
+        )
+
         async with aiohttp.ClientSession() as session:
             async with session.request(
                 method,
@@ -230,11 +292,51 @@ class TwitchNotifications(commands.Cog):
                 **kwargs,
             ) as response:
                 if response.ok:
-                    return await response.json()
+                    return response
                 elif response.status == 401:
                     raise TwitchUnauthorizedError
                 else:
                     raise TwitchHTTPException(response.status, await response.text())
+
+    def create_twitch_signature(
+        self, request: web.Request, secret: str, raw_body: bytes
+    ) -> str:
+        """
+        Verify that a webhook request came from Twitch by validating the HMAC signature.
+
+        Args:
+            request: The aiohttp request object
+            secret: The secret key used when creating the subscription
+            raw_body: The raw request body as bytes
+
+        Returns:
+            True if the signature is valid, False otherwise
+
+        Implementation based on:
+        https://dev.twitch.tv/docs/eventsub/handling-webhook-events/#verifying-the-event-message
+        """
+        # Get required headers
+        message_id = request.headers.get("twitch-eventsub-message-id")
+        timestamp = request.headers.get("twitch-eventsub-message-timestamp")
+
+        if not message_id or not timestamp:
+            log.warning(
+                "Missing required Twitch EventSub headers for signature verification"
+            )
+            return ""
+
+        # Build the message for HMAC: message_id + timestamp + raw_body
+        message = message_id + timestamp + raw_body.decode("utf-8")
+
+        # Create HMAC-SHA256 signature
+        expected_signature = (
+            "sha256="
+            + hmac.new(
+                secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256
+            ).hexdigest()
+        )
+
+        return expected_signature
 
     def is_webhook_callback_verification_request(self, request: web.Request) -> bool:
         return (
@@ -242,24 +344,47 @@ class TwitchNotifications(commands.Cog):
             == "webhook_callback_verification"
         )
 
-    async def respond_to_webhook_callback_verification(
-        self, request: web.Request
-    ) -> web.Response:
-        body = await request.json()
-        challenge = body.get("challenge")
-
-        log.info(f"Webhook callback verification challenge received: {body}")
+    def respond_to_webhook_callback_verification(self, data: dict) -> web.Response:
+        challenge = data.get("challenge", "")
 
         headers = {"Content-Type": str(len(challenge))}
         return web.Response(status=200, text=challenge, headers=headers)
 
     async def stream_online_handler(self, request: web.Request) -> web.Response:
-        log.info("Stream online handler called.")
-        if self.is_webhook_callback_verification_request(request):
-            log.info("Webhook callback verification request received.")
-            return await self.respond_to_webhook_callback_verification(request)
-
         data = await request.json()
+
+        log.info(f"Received Twitch EventSub notification: {data}")
+
+        if self.is_webhook_callback_verification_request(request):
+            broadcaster_id = (
+                data.get("subscription", {})
+                .get("condition", {})
+                .get("broadcaster_user_id")
+            )
+        else:
+            broadcaster_id = data.get("event", {}).get("broadcaster_user_id")
+
+        broadcaster_secret = await self.config.custom(
+            "broadcaster", broadcaster_id
+        ).secret()
+
+        expected_signature = self.create_twitch_signature(
+            request, broadcaster_secret, await request.read()
+        )
+        twitch_signature = request.headers.get("twitch-eventsub-message-signature", "")
+
+        log.info(f"Expected Twitch signature: {expected_signature}")
+        log.info(f"Received Twitch signature: {twitch_signature}")
+
+        if not hmac.compare_digest(expected_signature, twitch_signature):
+            log.warning("Twitch signature verification failed")
+            return web.Response(status=403)
+
+        if self.is_webhook_callback_verification_request(request):
+            log.info(
+                "Responding to webhook callback verification request with challenge"
+            )
+            return self.respond_to_webhook_callback_verification(data)
 
         guild = self.bot.get_guild(1379774648086036551)
         assert guild, "Guild not found"
