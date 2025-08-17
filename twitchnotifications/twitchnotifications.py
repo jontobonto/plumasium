@@ -371,6 +371,9 @@ class TwitchNotifications(commands.Cog):
         stream_data = streams_data[0] if streams_data else None
         user_data = users_data[0] if users_data else None
 
+        log.info(f"Stream data: {stream_data}")
+        log.info(f"User data: {user_data}")
+
         subscribed_channels = broadcaster_config.get("subscribed_channels", [])
         log.info(
             f"Subscribed channels for broadcaster {broadcaster_id}: {subscribed_channels}\nSending notifications..."
