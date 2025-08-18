@@ -73,7 +73,9 @@ class GetUsersResponseData(TypedDict):
 
 
 def replace_variables_in_notification(
-    message_data: DiscordNotificationMessage, stream_data: Optional[StreamData], user_data: Optional[UserData]
+    message_data: DiscordNotificationMessage,
+    stream_data: Optional[StreamData],
+    user_data: Optional[UserData],
 ) -> DiscordNotificationMessage:
     """
     Recursively replace all variables in a DiscordNotificationMessage
@@ -115,6 +117,21 @@ def replace_variables_in_notification(
 
     def replace_in_value(value):
         if isinstance(value, str):
+            # Handle special constructed variables FIRST (before general replacement)
+            if stream_data:
+                # Thumbnail URL with proper dimensions - handle this before $stream.thumbnail_url
+                thumbnail = stream_data.get("thumbnail_url", "").replace("{width}", "1920").replace("{height}", "1080")
+                value = value.replace("$stream.thumbnail_url_hd", thumbnail)
+
+            if user_data:
+                # Stream URL: https://twitch.tv/username
+                value = value.replace("$stream.url", f"https://twitch.tv/{user_data.get('login', '')}")
+            elif stream_data:
+                value = value.replace("$stream.url", f"https://twitch.tv/{stream_data.get('user_login', '')}")
+            else:
+                value = value.replace("$stream.url", "https://twitch.tv/")
+
+            # Now handle general variable replacement
             # Replace $user.var_name variables
             if user_data:
                 for key, val in user_data.items():
@@ -134,21 +151,6 @@ def replace_variables_in_notification(
                             value = value.replace(variable, val)
                         else:
                             value = value.replace(variable, str(val))
-
-            # Special constructed variables
-            if user_data:
-                # Stream URL: https://twitch.tv/username
-                value = value.replace("$stream.url", f"https://twitch.tv/{user_data.get('login', '')}")
-            elif stream_data:
-                value = value.replace("$stream.url", f"https://twitch.tv/{stream_data.get('user_login', '')}")
-            else:
-                value = value.replace("$stream.url", "https://twitch.tv/")
-
-            if stream_data:
-                # Thumbnail URL with proper dimensions
-                thumbnail = stream_data.get("thumbnail_url", "")
-                thumbnail = thumbnail.replace("{width}", "1920").replace("{height}", "1080")
-                value = value.replace("$stream.thumbnail_url_hd", thumbnail)
 
             return value
         elif isinstance(value, dict):
